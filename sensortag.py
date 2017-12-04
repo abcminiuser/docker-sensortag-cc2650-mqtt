@@ -34,7 +34,7 @@ class CC2530_SensorTag(object):
 
         TEMP_SCALE_DEG_C = 0.03125
 
-        rawTamb = (value[3]<<8) + value[2]
+        rawTamb = (value[3] << 8) + value[2]
         return float(rawTamb >> 2) * TEMP_SCALE_DEG_C
 
 
@@ -50,10 +50,10 @@ while True:
         sensortag_device = bluetooth_adapter.connect(SENSORTAG_BDADDR)
         sensortag = CC2530_SensorTag(sensortag_device)
 
+        sensortag.enable_temp_sensor()
+
         while True:
-            sensortag.enable_temp_sensor()
             ambient_temp = sensortag.read_temp_sensor_ambient()
-            sensortag.disable_temp_sensor()
 
             ambient_temp_string = "{:.2f}".format(ambient_temp)
             print("Temperature: {}".format(ambient_temp_string))

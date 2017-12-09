@@ -9,6 +9,7 @@ MQTT_HOST = "192.168.1.104"
 MQTT_HOST_PORT = 1883
 
 SENSORTAG_BDADDR = "68:C9:0B:05:63:07"
+SENSORTAG_MQTT_TOPIC = "home/sensortag/temperature"
 
 
 
@@ -56,9 +57,7 @@ while True:
             ambient_temp = sensortag.read_temp_sensor_ambient()
 
             ambient_temp_string = "{:.2f}".format(ambient_temp)
-            print("Temperature: {}".format(ambient_temp_string))
-
-            mqtt_client.publish("home/sensortag/temperature", ambient_temp_string);
+            mqtt_client.publish(SENSORTAG_MQTT_TOPIC, ambient_temp_string);
 
             time.sleep(30)
 
@@ -71,4 +70,10 @@ while True:
 
     except pygatt.exceptions.NotConnectedError:
         print("BLE failed, waiting to retry...\n")
-        time.sleep(1)
+        time.sleep(5)
+
+    except (KeyboardInterrupt, SystemExit):
+        raise
+
+    except
+        time.sleep(5)

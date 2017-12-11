@@ -28,7 +28,11 @@ class CC2530_SensorTag(object):
         self._device.char_write_handle(self.CHAR_HANDLE_IR_TEMP_CONTROL, [0])
 
     def read_ir_temp_sensor_ambient(self, retries=10):
-        value = self._device.char_read(self.CHAR_IR_TEMP_DATA)
+        value = [0]
+        for i in range(0, retries):
+            value = self._device.char_read(self.CHAR_IR_TEMP_DATA)
+            if all(v != 0 for v in value):
+                break
 
         rawTamb = (value[3] << 8) + value[2]
         return float(rawTamb >> 2) * 0.03125
@@ -40,11 +44,14 @@ class CC2530_SensorTag(object):
         self._device.char_write_handle(self.CHAR_HANDLE_HUMIDITY_CONTROL, [0])
 
     def read_humidity_sensor(self, retries=10):
-        value = self._device.char_read(self.CHAR_HUMIDITY_DATA)
+        value = [0]
+        for i in range(0, retries):
+            value = self._device.char_read(self.CHAR_HUMIDITY_DATA)
+            if all(v != 0 for v in value):
+                break
 
         rawHumidity = (value[3] << 8) + value[2]
         return float(rawHumidity & ~0x0003) / 65536 * 100
-
 
 
 while True:
@@ -70,7 +77,7 @@ while True:
                     },
                 "humidity": {
                         "topic": "home/sensortag/humidity",
-                        "sample_interval": 120,
+                        "sample_interval": 60 * 3,
                         "sample_delay": 3,
                         "enable": sensortag.enable_humidity_sensor,
                         "disable": sensortag.disable_humidity_sensor,
@@ -80,17 +87,18 @@ while True:
             }
 
         while True:
-            sensors_to_sample = [name for (name, sensor) in sensor_list.items() if sensor.get("last_sample_time", 0) + sensor.get("sample_interval", 0) <= time.monotonic()]
-            sample_delay = 1
+            sensors_to_sample = dict((name, sensor) for name, sensor in sensor_list.items() if sensor.get("next_sample_time", 0) <= time.monotonic())
 
-            for sensor in [sensor_list[name] for name in sensors_to_sample]:
-                sample_delay = max(sample_delay, sensor.get("sample_delay", 0))
+            for name, sensor in sensors_to_sample.items():
+                #print("Enabling \"{}\"...".format(name))
                 sensor["enable"]()
 
+            sample_delay = max([sensor.get("sample_delay", 0) for name, sensor in sensors_to_sample.items()])
             if sample_delay > 0:
+                #print("Sample delay {}...".format(sample_delay))
                 time.sleep(sample_delay)
 
-            for sensor in [sensor_list[name] for name in sensors_to_sample]:
+            for name, sensor in sensors_to_sample.items():
                 value = sensor["read"]()
                 formatter = sensor.get("format", "{}")
                 value_formatted = formatter.format(value)
@@ -98,17 +106,24 @@ while True:
                 #print("%s = %s" % (sensor["topic"], value_formatted))
                 mqtt_client.publish(sensor["topic"], value_formatted);
 
+                #print("Disabling \"{}\"...".format(name))
                 sensor["disable"]()
-                sensor["last_sample_time"] = time.monotonic()
 
-            time.sleep(15)
+                sensor["last_sample_time"] = time.monotonic()
+                sensor["next_sample_time"] = sensor["last_sample_time"] + sensor.get("sample_interval", 0)
+
+            next_wake_time = min([sensor.get("next_sample_time", 0) for name, sensor in sensors_to_sample.items()])
+            next_wake_time = max(next_wake_time, time.monotonic() + 5)
+
+            #print("Next wake in {}...".format(next_wake_time - time.monotonic()))
+            time.sleep(next_wake_time - time.monotonic())
 
     except ConnectionRefusedError:
-        print("MQTT failed, waiting to retry...\n")
+        print("MQTT failed, waiting to retry...")
         time.sleep(5)
 
     except pygatt.exceptions.NotConnectedError:
-        print("BLE failed, waiting to retry...\n")
+        print("BLE failed, waiting to retry...")
         time.sleep(5)
 
     except pygatt.exceptions.NotificationTimeout:

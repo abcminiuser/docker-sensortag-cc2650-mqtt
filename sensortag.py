@@ -39,14 +39,15 @@ class CC2530_SensorTag(object):
         return float(rawTamb >> 2) * 0.03125
 
 
-print("SensorTag to MQTT bridge running")
-print("Connecting to MQTT host: {} port {}".format(MQTT_HOST, MQTT_HOST_PORT))
-print("Connecting to sensortag BDADDR: {}".format(SENSORTAG_BDADDR))
+logging.info("SensorTag to MQTT bridge running")
+logging.info("Connecting to MQTT host: {} port {}".format(MQTT_HOST, MQTT_HOST_PORT))
+logging.info("Connecting to sensortag BDADDR: {}".format(SENSORTAG_BDADDR))
 
 while True:
     try:
         mqtt_client = mqtt.Client()
         mqtt_client.connect(MQTT_HOST, MQTT_HOST_PORT, 60)
+        mqtt_client.loop_start()
 
         bluetooth_adapter = pygatt.GATTToolBackend()
         bluetooth_adapter.start(reset_on_start=False)

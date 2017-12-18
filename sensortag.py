@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import logging
 import pygatt
 import paho.mqtt.client as mqtt
 import time
@@ -9,6 +10,9 @@ MQTT_HOST = "192.168.1.104"
 MQTT_HOST_PORT = 1883
 
 SENSORTAG_BDADDR = "68:C9:0B:05:63:07"
+
+
+logging.basicConfig(format='%(asctime)s %(message)s', level=logging.WARNING)
 
 
 class CC2530_SensorTag(object):
@@ -35,6 +39,10 @@ class CC2530_SensorTag(object):
         return float(rawTamb >> 2) * 0.03125
 
 
+print("SensorTag to MQTT bridge running")
+print("Connecting to MQTT host: {} port {}".format(MQTT_HOST, MQTT_HOST_PORT))
+print("Connecting to sensortag BDADDR: {}".format(SENSORTAG_BDADDR))
+
 while True:
     try:
         mqtt_client = mqtt.Client()
@@ -49,7 +57,7 @@ while True:
         sensor_list = {
                 "temperature": {
                         "topic": "home/sensortag/temperature",
-                        "sample_interval": 30,
+                        "sample_interval": 60 * 3,
                         "sample_delay": 2,
                         "enable": sensortag.enable_ir_temp_sensor,
                         "disable": sensortag.disable_ir_temp_sensor,
@@ -62,40 +70,42 @@ while True:
             sensors_to_sample = dict((name, sensor) for name, sensor in sensor_list.items() if sensor.get("next_sample_time", 0) <= time.monotonic())
 
             for name, sensor in sensors_to_sample.items():
-                print("Enabling \"{}\"...".format(name))
+                logging.info("Enabling \"{}\"...".format(name))
                 sensor["enable"]()
 
             sample_delay = max([sensor.get("sample_delay", 0) for name, sensor in sensors_to_sample.items()])
             if sample_delay > 0:
-                #print("Sample delay {}...".format(sample_delay))
+                logging.info("Sample delay {}...".format(sample_delay))
                 time.sleep(sample_delay)
+
+            now_monotonic = time.monotonic()
 
             for name, sensor in sensors_to_sample.items():
                 value = sensor["read"]()
                 formatter = sensor.get("format", "{}")
                 value_formatted = formatter.format(value)
 
-                print("%s = %s" % (sensor["topic"], value_formatted))
+                logging.info("Publishing %s = %s" % (sensor["topic"], value_formatted))
                 mqtt_client.publish(sensor["topic"], value_formatted);
 
-                #print("Disabling \"{}\"...".format(name))
+                logging.info("Disabling \"{}\"...".format(name))
                 sensor["disable"]()
 
-                sensor["last_sample_time"] = time.monotonic()
-                sensor["next_sample_time"] = sensor["last_sample_time"] + sensor.get("sample_interval", 0)
+                sensor["last_sample_time"] = now_monotonic
+                sensor["next_sample_time"] = now_monotonic + sensor.get("sample_interval", 0)
 
             next_wake_time = min([sensor.get("next_sample_time", 0) for name, sensor in sensors_to_sample.items()])
-            next_wake_time = max(next_wake_time, time.monotonic() + 5)
+            next_wake_time_delta = max(next_wake_time, now_monotonic + 5) - now_monotonic
 
-            #print("Next wake in {}...".format(next_wake_time - time.monotonic()))
-            time.sleep(next_wake_time - time.monotonic())
+            logging.info("Next wake in {}...".format(next_wake_time_delta))
+            time.sleep(next_wake_time_delta)
 
     except ConnectionRefusedError:
-        print("MQTT failed, waiting to retry...")
+        logging.warning("MQTT failed, waiting to retry...")
         time.sleep(5)
 
     except pygatt.exceptions.NotConnectedError:
-        print("BLE failed, waiting to retry...")
+        logging.warning("BLE failed, waiting to retry...")
         time.sleep(5)
 
     except pygatt.exceptions.NotificationTimeout:
